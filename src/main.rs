@@ -6,14 +6,15 @@ use ggez::{
     GameError, 
     graphics::{
         self, 
-        Color, DrawParam, Text,
+        Color, DrawParam, Text, Mesh, Drawable
     },
     event::{
         self, 
         EventHandler,
-        KeyCode,
-    }, timer,
-    glam::{vec2, Vec2, ivec2, IVec2}
+    }, 
+    timer,
+    input::keyboard::{KeyCode, KeyInput},
+    glam::{vec2, Vec2, ivec2, IVec2}, 
 };
 use std::{f32::{consts::PI}, str::from_utf8};
 
@@ -147,72 +148,9 @@ impl Game {
             draw_map: false,
         }
     }
-}
 
-impl EventHandler for Game {
-    fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
-        // store last player location on map
-        let old_pos = self.player.pos;
-        let delta_time = timer::delta(ctx).as_secs_f32();
-        self.player.handle_input(delta_time);
-        
-        let mut new_pos = self.player.pos;
-        if self.map[(new_pos.y as i32 * self.size.x + new_pos.x as i32) as usize] == b'#' {
-            self.player.pos = old_pos;
-            new_pos = self.player.pos;
-        }
-
-        if old_pos != new_pos {
-            self.map[(old_pos.y as i32 * self.size.x + old_pos.x as i32) as usize] = b'.';
-            self.map[(new_pos.y as i32 * self.size.x + new_pos.x as i32) as usize] = b'P';
-        } 
-        Ok(())
-    }
-
-    fn key_down_event(&mut self, _ctx: &mut Context, keycode: event::KeyCode, _keymods: event::KeyMods, _repeat: bool) {
-        match keycode {
-            KeyCode::A => {
-                // left
-                self.player.controller.x = -1;
-            },
-            KeyCode::W => {
-                //forw
-                self.player.controller.y = 1;
-            },
-            KeyCode::D => {
-                //right
-                self.player.controller.x = 1;
-            },
-            KeyCode::S => {
-                //back
-                self.player.controller.y = -1;
-            },
-            KeyCode::Left => {
-                //rot left
-                self.player.controller.a = -1;
-            },
-            KeyCode::Right => {
-                //rot right
-                self.player.controller.a = 1;
-            },
-            _ => {}
-        }
-    }
-    
-    fn key_up_event(&mut self, ctx: &mut Context, keycode: KeyCode, _keymods: event::KeyMods) {
-        match keycode {
-            KeyCode::Escape => event::quit(ctx),
-            KeyCode::A | KeyCode::D => self.player.controller.x = 0,
-            KeyCode::W | KeyCode::S => self.player.controller.y = 0,
-            KeyCode::Left | KeyCode::Right => self.player.controller.a = 0,
-            KeyCode::M => self.draw_map = !self.draw_map,
-            _ => {}
-        }
-    }
-
-    fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        graphics::clear(ctx, Color::BLACK);
-        let (screen_width, screen_height) = graphics::drawable_size(ctx);
+    fn raycast(&self, ctx: &Context) -> GameResult<Mesh> {
+        let (screen_width, screen_height) = ctx.gfx.drawable_size();
         let mut mb = graphics::MeshBuilder::new();
         for x in 0..screen_width as u32 {
             // raycasting 
@@ -268,38 +206,106 @@ impl EventHandler for Game {
             let color = Color::new(c, c, c, c);
 
             mb.line(&[vec2(x as f32, ceil_distance), vec2(x as f32, floor_distance)], 1.0, color)?;
-            
-            
         }
-        let mesh = mb.build(ctx)?;
-        graphics::draw(ctx, &mesh, (vec2(0., 0.),))?;
+        Ok(Mesh::from_data(&ctx.gfx, mb.build()))
+    }
+}
+
+impl EventHandler for Game {
+    fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
+        // store last player location on map
+        let old_pos = self.player.pos;
+        let delta_time = ctx.time.delta().as_secs_f32();
+        self.player.handle_input(delta_time);
+        
+        let mut new_pos = self.player.pos;
+        // check map bounds
+        if !(0..self.size.x).contains(&(new_pos.x as i32)) || !(0..self.size.y).contains(&(new_pos.y as i32)) {
+            self.player.pos = old_pos;
+            new_pos = self.player.pos;
+        }
+        if self.map[(new_pos.y as i32 * self.size.x + new_pos.x as i32) as usize] == b'#' {
+            self.player.pos = old_pos;
+            new_pos = self.player.pos;
+        }
+
+        if old_pos != new_pos {
+            self.map[(old_pos.y as i32 * self.size.x + old_pos.x as i32) as usize] = b'.';
+            self.map[(new_pos.y as i32 * self.size.x + new_pos.x as i32) as usize] = b'P';
+        } 
+        Ok(())
+    }
+
+    fn key_down_event(&mut self, _ctx: &mut Context, input: KeyInput, _repeat: bool) -> GameResult {
+        if let Some(keycode) = input.keycode {
+            match keycode {
+                KeyCode::A => {
+                    // left
+                    self.player.controller.x = -1;
+                },
+                KeyCode::W => {
+                    //forw
+                    self.player.controller.y = 1;
+                },
+                KeyCode::D => {
+                    //right
+                    self.player.controller.x = 1;
+                },
+                KeyCode::S => {
+                    //back
+                    self.player.controller.y = -1;
+                },
+                KeyCode::Left => {
+                    //rot left
+                    self.player.controller.a = -1;
+                },
+                KeyCode::Right => {
+                    //rot right
+                    self.player.controller.a = 1;
+                },
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    
+    fn key_up_event(&mut self, ctx: &mut Context, input: KeyInput) -> GameResult {
+        if let Some(keycode) = input.keycode {
+            match keycode {
+                KeyCode::Escape => ctx.request_quit(),
+                KeyCode::A | KeyCode::D => self.player.controller.x = 0,
+                KeyCode::W | KeyCode::S => self.player.controller.y = 0,
+                KeyCode::Left | KeyCode::Right => self.player.controller.a = 0,
+                KeyCode::M => self.draw_map = !self.draw_map,
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+
+    fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
+        let mut canvas = graphics::Canvas::from_frame(ctx, Color::BLACK);
+        let mesh = self.raycast(&ctx)?;
+        canvas.draw(&mesh, DrawParam::default());
         
         let mut y = 20.0;
         if self.draw_map {
             for dy in 0..self.size.y {
                 let t = Text::new(from_utf8(&self.map[(dy * self.size.x) as usize..(dy * self.size.x + self.size.x) as usize]).unwrap());
-                graphics::queue_text(
-                    ctx, 
-                    &t, 
-                    vec2(20.0, y), 
-                    Some(Color::WHITE)
-                );
-                y += t.height(ctx);
+                canvas.draw(&t, DrawParam::default().dest(vec2(20., y)).color(Color::WHITE));
+                y += t.dimensions(ctx).unwrap_or(graphics::Rect::default()).h;
             }
         }
-        graphics::queue_text(ctx, &Text::new(timer::fps(ctx).to_string() + " fps"), vec2(20., y), Some(Color::WHITE));
+        let fps_txt = Text::new(ctx.time.fps().to_string() + " fps");
+        canvas.draw(&fps_txt, DrawParam::default().dest(vec2(20., y)).color(Color::WHITE));
         
-        graphics::draw_queued_text(ctx, DrawParam::default(), None, graphics::FilterMode::Linear)?;
-        
-        graphics::present(ctx)?;
+        canvas.finish(ctx)?;
         timer::yield_now();
         Ok(())
     }
 
-    fn resize_event(&mut self, ctx: &mut Context, width: f32, height: f32) {
-        graphics::set_screen_coordinates(ctx, graphics::Rect::new(0.0, 0.0, width, height))
-            .unwrap();
-    }
+
     fn on_error(&mut self, _ctx: &mut Context, origin: event::ErrorOrigin, e: GameError) -> bool {
         match origin {
             event::ErrorOrigin::Draw => {
@@ -316,8 +322,8 @@ impl EventHandler for Game {
 }
 
 fn main() {
-    let (ctx, ev_loop) = ContextBuilder::new("ggez testing :)", "Day")
-        .window_setup(WindowSetup::default().title("ggez testing :)"))
+    let (ctx, ev_loop) = ContextBuilder::new("DD2258 Bonus Project", "Day")
+        .window_setup(WindowSetup::default().title("DD2258 Bonus Project"))
         .window_mode(WindowMode::default().dimensions(1280., 720.).resizable(true))
         .build().expect("get context");
     let game = Game::new(16, 16, 20.);
