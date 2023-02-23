@@ -125,11 +125,10 @@ struct Game {
     draw_map: bool,
     tx: Sender<audio::ToAudio>,
     rx: Receiver<audio::FromAudio>,
-    handle: JoinHandle<()>,
 }
 
 impl Game {
-    fn new(width: i32, height: i32, render_distance: f32, tx: Sender<audio::ToAudio>, rx: Receiver<audio::FromAudio>, handle: JoinHandle<()>) -> Self {
+    fn new(width: i32, height: i32, render_distance: f32, tx: Sender<audio::ToAudio>, rx: Receiver<audio::FromAudio>) -> Self {
         Self {
             size: ivec2(width, height),
             render_distance,
@@ -139,7 +138,6 @@ impl Game {
             draw_map: false,
             tx,
             rx,
-            handle,
         }
     }
 
@@ -338,10 +336,6 @@ impl EventHandler for Game {
         }
     }
 
-    fn quit_event(&mut self, _ctx: &mut Context) -> GameResult<bool> {
-        self.handle.join().expect("join audio thread");
-        Ok(false)
-    }
 }
 
 fn main() {
@@ -354,7 +348,7 @@ fn main() {
         )
         .build()
         .expect("get context");
-    let (tx, rx, handle) = audio::audio_thread();
-    let game = Game::new(16, 16, 20., tx, rx, handle);
+    let (tx, rx) = audio::audio_thread();
+    let game = Game::new(16, 16, 20., tx, rx);
     event::run(ctx, ev_loop, game);
 }
