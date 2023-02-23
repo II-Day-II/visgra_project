@@ -9,6 +9,7 @@ use ggez::{
 use std::{f32::consts::PI, str::from_utf8, thread::JoinHandle};
 use crossbeam_channel::{Sender, Receiver};
 mod audio;
+mod texture;
 
 const MAP: &str = "#########.......\
 #...............\
@@ -125,6 +126,7 @@ struct Game {
     draw_map: bool,
     tx: Sender<audio::ToAudio>,
     rx: Receiver<audio::FromAudio>,
+    wall_texture: texture::Texture,
 }
 
 impl Game {
@@ -138,6 +140,7 @@ impl Game {
             draw_map: false,
             tx,
             rx,
+            wall_texture: texture::Texture::new(32, 32),
         }
     }
 
@@ -172,8 +175,11 @@ impl Game {
                     ((map_check.y + 1) as f32 - self.player.pos.y) * step_size.y
                 },
             );
+
             let mut tile_found = false;
             let mut distance = 0.0;
+            let mut texture_sample_x = -1.; // set to smth valid when hit wall
+            
             while !tile_found && distance < self.render_distance {
                 // walk shortest path
                 if ray_length1d.x < ray_length1d.y {
@@ -193,27 +199,41 @@ impl Game {
                 {
                     tile_found =
                         self.map[(map_check.y * self.size.x + map_check.x) as usize] == b'#';
+                    let tile_midpoint = map_check.as_vec2() + 0.5;
+                    let tile_intersection = self.player.pos + ray_direction * distance;
+                    let intersect_angle = (tile_intersection.y - tile_midpoint.y).atan2(tile_intersection.x - tile_midpoint.x);
+                    if intersect_angle >= -PI * 0.25 && intersect_angle < PI * 0.25 {
+                        texture_sample_x = tile_intersection.y - map_check.y as f32;
+                    }
+                    if intersect_angle >= PI * 0.25 && intersect_angle < PI * 0.75 {
+                        texture_sample_x = tile_intersection.x - map_check.x as f32;
+                    }
+                    if intersect_angle < -PI * 0.25 && intersect_angle >= -PI * 0.75 {
+                        texture_sample_x = tile_intersection.x - map_check.x as f32;
+                    }
+                    if intersect_angle >= PI * 0.75 || intersect_angle < -PI * 0.75 {
+                        texture_sample_x = tile_intersection.y - map_check.y as f32;
+                    }
                 }
             }
-            let _tile_intersection = if tile_found {
-                self.player.pos + ray_direction * distance
-            } else {
-                vec2(self.render_distance + 1e+10, self.render_distance + 1e+10)
-            };
             let sh = screen_height;
             let ceil_distance = (sh / 2.) - sh / distance;
             let floor_distance = sh - ceil_distance;
             let c = 1. - distance / self.render_distance;
-            let color = Color::new(c, c, c, c);
+            let line_distance = floor_distance - ceil_distance;
 
-            mb.line(
-                &[
-                    vec2(x as f32, ceil_distance),
-                    vec2(x as f32, floor_distance),
-                ],
-                1.0,
-                color,
-            )?;
+            for y in 0..self.wall_texture.height() {
+                let texture_sample_y = y as f32 / self.wall_texture.height() as f32;
+                let next_y = (y + 1) as f32 / self.wall_texture.height() as f32;
+                mb.line(
+                    &[
+                        vec2(x as f32, ceil_distance + texture_sample_y * line_distance),
+                        vec2(x as f32, ceil_distance + next_y * line_distance),
+                    ],
+                    1.0,
+                    self.wall_texture.sample_color_weighted(texture_sample_x, texture_sample_y, c),
+                )?;
+            }
         }
         Ok(Mesh::from_data(&ctx.gfx, mb.build()))
     }
