@@ -29,7 +29,7 @@ impl AudioData {
     fn new(cons: Consumer<ToAudio, Arc<HeapRb<ToAudio>>>) -> Self {
         Self { 
             cons,
-            use_mic: false,
+            use_mic: true,
             echo: true,
         }
     }

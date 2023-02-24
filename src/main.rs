@@ -6,10 +6,12 @@ use ggez::{
     input::keyboard::{KeyCode, KeyInput},
     timer, Context, ContextBuilder, GameError, GameResult,
 };
-use std::{f32::consts::PI, str::from_utf8, thread::JoinHandle};
+use std::{f32::consts::PI, str::from_utf8, thread::JoinHandle, collections::VecDeque};
 use crossbeam_channel::{Sender, Receiver};
 mod audio;
 mod texture;
+
+const WAVE_SIZE: usize = 4410;
 
 const MAP: &str = "#########.......\
 #...............\
@@ -127,6 +129,7 @@ struct Game {
     tx: Sender<audio::ToAudio>,
     rx: Receiver<audio::FromAudio>,
     wall_texture: texture::Texture,
+    wave_buffer: VecDeque<f32>,
 }
 
 impl Game {
@@ -140,7 +143,8 @@ impl Game {
             draw_map: false,
             tx,
             rx,
-            wall_texture: texture::Texture::new(32, 32),
+            wall_texture: texture::Texture::new(WAVE_SIZE, 32),
+            wave_buffer: VecDeque::with_capacity(WAVE_SIZE)
         }
     }
 
@@ -216,6 +220,7 @@ impl Game {
                     }
                 }
             }
+
             let sh = screen_height;
             let ceil_distance = (sh / 2.) - sh / distance;
             let floor_distance = sh - ceil_distance;
@@ -243,6 +248,7 @@ impl EventHandler for Game {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         // store last player location on map
         let old_pos = self.player.pos;
+        // update player position
         let delta_time = ctx.time.delta().as_secs_f32();
         self.player.handle_input(delta_time);
 
@@ -254,14 +260,32 @@ impl EventHandler for Game {
             self.player.pos = old_pos;
             new_pos = self.player.pos;
         }
+        // check wall collision
         if self.map[(new_pos.y as i32 * self.size.x + new_pos.x as i32) as usize] == b'#' {
             self.player.pos = old_pos;
             new_pos = self.player.pos;
         }
-
+        // update map
         if old_pos != new_pos {
             self.map[(old_pos.y as i32 * self.size.x + old_pos.x as i32) as usize] = b'.';
             self.map[(new_pos.y as i32 * self.size.x + new_pos.x as i32) as usize] = b'P';
+        }
+        // update wall texture with data from audio thread
+        // get new data
+        for _ in 0..WAVE_SIZE {
+            if let Ok(audio::FromAudio::Data(data)) = self.rx.try_recv() {
+                if self.wave_buffer.len() == WAVE_SIZE {
+                    self.wave_buffer.pop_front(); // remove what's already off screen
+                }
+                self.wave_buffer.push_back(data);
+            } else {
+                break;
+            }
+        }
+        self.wall_texture.clear();
+        // move data into texture
+        for (i, val) in self.wave_buffer.iter().enumerate() {
+            self.wall_texture.set_color(i, (val * 32. + 16.) as usize, Color::BLACK);
         }
         Ok(())
     }

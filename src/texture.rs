@@ -50,6 +50,12 @@ impl Texture {
         self.buffer[x + self.width * y]
     }
 
+    pub fn clear(&mut self) {
+        for i in 0..self.width * self.height {
+            self.buffer[i] = Color::WHITE;
+        }
+    }
+
     pub fn sample_color(&self, x: f32, y: f32) -> Color {
         let sx = (self.width as f32 * x) as usize;
         let sy = (self.height as f32 * y) as usize;
