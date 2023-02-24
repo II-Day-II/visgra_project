@@ -38,7 +38,7 @@ impl AudioData {
         Self { 
             cons,
             send_to_gfx: true,
-            use_mic: true,
+            use_mic: false,
             wav_src: reader.into_samples(),
         }
     }
