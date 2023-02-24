@@ -1,18 +1,16 @@
 use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, Sample};
 use crossbeam_channel::{Receiver, Sender};
 use std::{thread, sync::Arc};
-use ringbuf::{HeapRb, Consumer, Producer};
+use ringbuf::{HeapRb, Consumer, Rb};
+use hound;
 
-const LATENCY: f32 = 15.0;
+const LATENCY: f32 = 150.0;
 
 
 #[derive(Debug)]
 pub enum ToAudio {
-    Pause,
-    Play,
     ToggleMic,
-    ToggleEcho,
-    Volume(bool),
+    ToggleVisuals,
 }
 
 pub enum FromAudio {
@@ -21,30 +19,48 @@ pub enum FromAudio {
 
 struct AudioData {
     cons: Consumer<ToAudio, Arc<HeapRb<ToAudio>>>,
+    send_to_gfx: bool,
     use_mic: bool,
-    echo: bool,
+    wav_src: hound::WavIntoSamples<std::io::BufReader<std::fs::File>,f32>,
 }
 
 impl AudioData {
     fn new(cons: Consumer<ToAudio, Arc<HeapRb<ToAudio>>>) -> Self {
+        // find first wav file in ./music
+        let fname = std::fs::read_dir("./music").expect("no music dir")
+            .filter_map(Result::ok)
+            .filter(|x| x.path().to_string_lossy().ends_with("wav"))
+            .next().expect("find a wav file")
+            .path();
+        let reader = hound::WavReader::open(fname).expect("open wav file");
+        let spec = reader.spec();
+        eprintln!("{:?}", spec);
         Self { 
             cons,
+            send_to_gfx: true,
             use_mic: true,
-            echo: true,
+            wav_src: reader.into_samples(),
         }
     }
 
     fn handle_commands(&mut self) {
         while let Some(cmd) = self.cons.pop() {
             match cmd {
+                ToAudio::ToggleVisuals => {
+                    self.send_to_gfx = !self.send_to_gfx;
+                },
                 ToAudio::ToggleMic => {
                     self.use_mic = !self.use_mic;
-                },
-                ToAudio::ToggleEcho => {
-                    self.echo = !self.echo;
                 }
-                _ => {},
             }
+        }
+    }
+
+    fn next_sample(&mut self) -> f32 {
+        if let Some(sample) = self.wav_src.next() {
+            sample.unwrap_or(0.0)
+        } else {
+            0.0
         }
     }
 }
@@ -95,16 +111,24 @@ fn audio_handler<T: Sample>(device_in: &cpal::Device, device_out: &cpal::Device,
         prod.push(0.0).unwrap()
     }
 
+    // duplicate it to keep track of if mic should do things in both threads
+    let mut dupe_use_mic = audio_data.use_mic;
+
     let stream_in = device_in.build_input_stream(
         cfg_in,
         move |data: &[T], _: &_| {
             let mut need_more_latency = false;
             while let Ok(cmd) = rx.try_recv() {
+                if let ToAudio::ToggleMic = cmd {
+                    dupe_use_mic = !dupe_use_mic;
+                }
                 audio_prod.push(cmd).expect("audio commands are handled");
             }
             for &sample in data {
-                if prod.push(sample.to_f32()).is_err() {
-                    need_more_latency = true;
+                if dupe_use_mic {
+                    if prod.push(sample.to_f32()).is_err() {
+                        need_more_latency = true;
+                    }
                 }
             }
             if need_more_latency {
@@ -120,25 +144,22 @@ fn audio_handler<T: Sample>(device_in: &cpal::Device, device_out: &cpal::Device,
             let mut need_more_latency = false;
             audio_data.handle_commands();
             for frame in data.chunks_mut(channels) {
-                let smp = match cons.pop() {
-                    Some(s) => s,
-                    None => {
-                        need_more_latency = true;
-                        0.0
-                    }
-                };
-                if audio_data.use_mic { // send it to the graphics part
-                    tx.send(FromAudio::Data(smp)).expect("send response to gfx thread");
-                }
-                let smp = if audio_data.echo {
-                    smp
-                } else {
-                    0.0 // TODO: make this play a music file or smth
-                };
-                let value: T = cpal::Sample::from(&smp);
-
                 for sample in frame.iter_mut() {
-                    *sample = value;
+                    let tmp = if audio_data.use_mic {
+                        match cons.pop() {
+                            Some(s) => s,
+                            None => {
+                                need_more_latency = true;
+                                0.0
+                            }
+                        }
+                    } else {
+                        audio_data.next_sample()
+                    };
+                    if audio_data.send_to_gfx { // send it to the graphics part
+                        tx.send(FromAudio::Data(tmp)).expect("send response to gfx thread");
+                    }
+                    *sample = cpal::Sample::from(&tmp);
                 }
             }
             if need_more_latency {

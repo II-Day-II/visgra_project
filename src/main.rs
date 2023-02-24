@@ -6,12 +6,14 @@ use ggez::{
     input::keyboard::{KeyCode, KeyInput},
     timer, Context, ContextBuilder, GameError, GameResult,
 };
-use std::{f32::consts::PI, str::from_utf8, thread::JoinHandle, collections::VecDeque};
+use std::{f32::consts::PI, str::from_utf8, collections::VecDeque};
 use crossbeam_channel::{Sender, Receiver};
 mod audio;
 mod texture;
 
 const WAVE_SIZE: usize = 4410;
+const WAVE_HEIGHT: usize = 32;
+const WAVE_MUL: f32 = (WAVE_HEIGHT - 1) as f32 / 2.0;
 
 const MAP: &str = "#########.......\
 #...............\
@@ -143,7 +145,7 @@ impl Game {
             draw_map: false,
             tx,
             rx,
-            wall_texture: texture::Texture::new(WAVE_SIZE, 32),
+            wall_texture: texture::Texture::new(WAVE_SIZE, WAVE_HEIGHT),
             wave_buffer: VecDeque::with_capacity(WAVE_SIZE)
         }
     }
@@ -285,7 +287,7 @@ impl EventHandler for Game {
         self.wall_texture.clear();
         // move data into texture
         for (i, val) in self.wave_buffer.iter().enumerate() {
-            self.wall_texture.set_color(i, (val * 32. + 16.) as usize, Color::BLACK);
+            self.wall_texture.set_color(i, ((val.clamp(-1.,1.) + 1.) * WAVE_MUL) as usize, Color::BLACK);
         }
         Ok(())
     }
@@ -331,6 +333,12 @@ impl EventHandler for Game {
                 KeyCode::W | KeyCode::S => self.player.controller.y = 0,
                 KeyCode::Left | KeyCode::Right => self.player.controller.a = 0,
                 KeyCode::M => self.draw_map = !self.draw_map,
+                KeyCode::T => { 
+                    self.tx.send(audio::ToAudio::ToggleVisuals).expect("send command to audio thread")
+                },
+                KeyCode::R => {
+                    self.tx.send(audio::ToAudio::ToggleMic).expect("send command to audio thread")
+                }
                 _ => {}
             }
         }

@@ -2583,6 +2583,7 @@ dependencies = [
  "cpal 0.13.5",
  "crossbeam-channel",
  "ggez",
+ "hound",
  "ringbuf",
 ]
 
