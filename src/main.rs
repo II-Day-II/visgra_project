@@ -6,7 +6,8 @@ use ggez::{
     input::keyboard::{KeyCode, KeyInput},
     timer, Context, ContextBuilder, GameError, GameResult,
 };
-use std::{f32::consts::PI, str::from_utf8, collections::VecDeque};
+use ringbuf::{LocalRb, Rb};
+use std::{f32::consts::PI, str::from_utf8, mem::MaybeUninit};
 use crossbeam_channel::{Sender, Receiver};
 mod audio;
 mod texture;
@@ -131,7 +132,7 @@ struct Game {
     tx: Sender<audio::ToAudio>,
     rx: Receiver<audio::FromAudio>,
     wall_texture: texture::Texture,
-    wave_buffer: VecDeque<f32>,
+    wave_buffer: LocalRb<f32, Vec<MaybeUninit<f32>>>,
 }
 
 impl Game {
@@ -146,7 +147,7 @@ impl Game {
             tx,
             rx,
             wall_texture: texture::Texture::new(WAVE_SIZE, WAVE_HEIGHT),
-            wave_buffer: VecDeque::with_capacity(WAVE_SIZE)
+            wave_buffer: LocalRb::new(WAVE_SIZE)
         }
     }
 
@@ -276,10 +277,7 @@ impl EventHandler for Game {
         // get new data
         for _ in 0..WAVE_SIZE {
             if let Ok(audio::FromAudio::Data(data)) = self.rx.try_recv() {
-                if self.wave_buffer.len() == WAVE_SIZE {
-                    self.wave_buffer.pop_front(); // remove what's already off screen
-                }
-                self.wave_buffer.push_back(data);
+                self.wave_buffer.push_overwrite(data);
             } else {
                 break;
             }
