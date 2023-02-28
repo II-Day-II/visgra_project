@@ -131,9 +131,9 @@ fn audio_handler<T: Sample>(device_in: &cpal::Device, device_out: &cpal::Device,
                     }
                 }
             }
-            if need_more_latency {
-                eprintln!("output is falling behind, need more latency!");
-            }
+            // if need_more_latency {
+            //     eprintln!("output is falling behind, need more latency!");
+            // }
         },
         err_fn,
     )?;
@@ -162,9 +162,9 @@ fn audio_handler<T: Sample>(device_in: &cpal::Device, device_out: &cpal::Device,
                     *sample = cpal::Sample::from(&tmp);
                 }
             }
-            if need_more_latency {
-                eprintln!("input is falling behind, need more latency!");
-            }
+            // if need_more_latency {
+            //     eprintln!("input is falling behind, need more latency!");
+            // }
         },
         err_fn
     )?;

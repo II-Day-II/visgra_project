@@ -8,25 +8,7 @@ pub struct Texture {
 
 impl Texture {
     pub fn new(width: usize, height: usize) -> Self {
-        let mut buffer = vec![Color::WHITE; width * height];
-        #[cfg(debug_assertions)]
-        {
-            let colors = vec![
-                Color::RED,
-                Color::BLUE,
-                Color::GREEN,
-                Color::WHITE,
-                Color::YELLOW,
-                Color::MAGENTA,
-                Color::CYAN,
-                Color::BLACK,
-            ];
-            for y in 0..height {
-                for x in 0..width {
-                    buffer[x + width * y] = colors[y % colors.len()];
-                }
-            }
-        }
+        let buffer = vec![Color::WHITE; width * height];
         Self {
             width,
             height,
