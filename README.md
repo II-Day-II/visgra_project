@@ -12,6 +12,8 @@ Assuming you have git and cargo installed:
 
 `$ cargo run --release` OR `$ ./target/release/visgra_project(.exe)`
 
+Press Esc to exit. You may get a warning about a thread panicking, but this is fine.
+
 ## Requirements
 
 - Fairly strong CPU, as most of the rendering is software based and there are a lot of threads that need to communicate with each other.
